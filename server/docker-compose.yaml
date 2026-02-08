@@ -1,0 +1,151 @@
+networks:
+  grafana:
+
+
+services:
+  backend:
+    image: grafana/loki:latest
+    platform: linux/arm64
+    volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml
+    ports:
+      - "3100"
+      - "7946"
+    command: "-config.file=/etc/loki/config.yaml -target=backend -legacy-read-mode=false"
+    depends_on:
+      - gateway
+    healthcheck:
+      test: [  "CMD", "loki", "-health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grafana
+
+
+  read:
+    image: grafana/loki:latest
+    platform: linux/arm64
+    command: "-config.file=/etc/loki/config.yaml -target=read"
+    ports:
+      - 3101:3100
+      - 7946
+      - 9095
+    volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml
+    depends_on:
+      - minio
+    healthcheck:
+      test: [  "CMD", "loki", "-health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: &loki-dns
+      grafana:
+        aliases:
+          - loki
+
+
+  write:
+    image: grafana/loki:latest
+    platform: linux/arm64
+    command: "-config.file=/etc/loki/config.yaml -target=write"
+    ports:
+      - 3102:3100
+      - 7946
+      - 9095
+    volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml
+    healthcheck:
+      test: [ "CMD", "loki", "-health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      - minio
+    networks:
+      <<: *loki-dns
+
+
+  # Might be moving this to garage (https://github.com/deuxfleurs-org/garage) as minio community support is ending .
+  # have already tested garage and believe it would be a good replacement for this.
+  minio:
+    image: minio/minio
+    platform: linux/arm64
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        mkdir -p /data/loki-data && \
+        mkdir -p /data/loki-ruler && \
+        minio server /data
+    environment:
+      - MINIO_ROOT_USER=loki
+      - MINIO_ROOT_PASSWORD=supersecret
+      - MINIO_PROMETHEUS_AUTH_TYPE=public
+      - MINIO_UPDATE=off
+    ports:
+      - 9000
+    volumes:
+      - ./.data/minio:/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 15s
+      timeout: 20s
+      retries: 5
+    networks:
+      - grafana
+
+
+  grafana:
+    image: grafana/grafana:latest
+    platform: linux/arm64
+    environment:
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    depends_on:
+      - gateway
+    volumes:
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/ds.yaml
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grafana
+
+
+  prometheus:
+    image: prom/prometheus:latest
+    platform: linux/arm64
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+    networks:
+      - grafana
+
+
+  gateway:
+    image: nginx:latest
+    platform: linux/arm64
+    depends_on:
+      - read
+      - write
+    volumes:
+      - ./loki-nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grafana

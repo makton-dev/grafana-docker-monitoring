@@ -1,0 +1,26 @@
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://gateway:3100
+    jsonData:
+      httpHeaderName1: "X-Scope-OrgID"
+    secureJsonData:
+      httpHeaderValue1: "tenant1"
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      allowAsRecordingRulesTarget: true
+      prometheusType: Prometheus
+      prometheusVersion: 3.3.0
+      cacheLevel: 'High'
+      disableRecordingRules: false
+      timeInterval: 15s
+      incrementalQueryOverlapWindow: 10m
+    editable: true

@@ -1,0 +1,42 @@
+services:
+  # Collector for Loki and Prometheus
+  alloy:
+    image: grafana/alloy:latest
+    platform: linux/arm64
+    volumes:
+      - ./alloy-local-config.yaml:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:  run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    ports:
+      - 12345:12345
+    depends_on:
+      - gateway
+    networks:
+      - monitoring
+
+  # docker metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring
+
+  # Node Metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    platform: linux/arm64
+    container_name: node_exporter
+    command:
+      - '--path.rootfs=/host'
+    network_mode: host
+    pid: host
+    volumes:
+      - '/:/host:ro,rslave'
+    networks:
+      - monitoring
