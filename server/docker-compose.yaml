@@ -129,7 +129,7 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--web.enable-remote-write-receiver"
     healthcheck:
-      test: [ "CMD-SHELL", "/bin/wget --no-verbose --tries=1 --spider http://localhost:9090/api/health || exit 1" ]
+      test: [ "CMD-SHELL", "/bin/wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
