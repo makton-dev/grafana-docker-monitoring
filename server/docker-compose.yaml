@@ -1,6 +1,10 @@
 networks:
   grafana:
 
+volumes:
+  grafana-storage:
+  prometheus-storage:
+  loki-s3:
 
 services:
   backend:
@@ -87,7 +91,7 @@ services:
     ports:
       - 9000
     volumes:
-      - ./.data/minio:/data
+      - loki-s3:/data
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 15s
@@ -107,6 +111,7 @@ services:
       - gateway
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/ds.yaml
+      - grafana-storage:/var/lib/grafana
     ports:
       - "3000:3000"
     healthcheck:
@@ -124,6 +129,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
+      - prometheus-storage:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"

@@ -1,11 +1,18 @@
 services:
   # Collector for Loki and Prometheus
   alloy:
-    image: grafana/alloy:latest
-    platform: linux/arm64
-    volumes:
+   image: grafana/alloy:latest
+   platform: linux/arm64
+   privileged: true
+   ports:
+     - 12345:12345
+     - 4317:4317
+     - 4318:4318
+   volumes:
       - ./alloy.conf:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-    command:  run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
-    ports:
-      - 12345:12345
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /:/rootfs:ro
+      - /dev/disk/:/dev/disk:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+   command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
