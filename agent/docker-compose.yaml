@@ -1,3 +1,7 @@
+networks:
+  alloy:
+
+
 services:
   # Collector for Loki and Prometheus
   alloy:
@@ -12,7 +16,7 @@ services:
     depends_on:
       - gateway
     networks:
-      - monitoring
+      - alloy
 
   # docker metrics
   cadvisor:
@@ -25,7 +29,7 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     networks:
-      - monitoring
+      - alloy
 
   # Node Metrics
   node-exporter:
@@ -39,4 +43,4 @@ services:
     volumes:
       - '/:/host:ro,rslave'
     networks:
-      - monitoring
+      - alloy
