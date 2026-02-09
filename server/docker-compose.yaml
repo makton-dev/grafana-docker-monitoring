@@ -3,12 +3,16 @@ networks:
 
 volumes:
   grafana-storage:
+    name: grafana 
   prometheus-storage:
+    name: prometheus
   loki-s3:
+    name: loki
 
 services:
   backend:
-    image: grafana/loki:latest
+    container_name: loki_backend
+    image: grafana/loki
     platform: linux/arm64
     volumes:
       - ./loki-config.yaml:/etc/loki/config.yaml
@@ -28,7 +32,8 @@ services:
 
 
   read:
-    image: grafana/loki:latest
+    container_name: loki_read
+    image: grafana/loki
     platform: linux/arm64
     command: "-config.file=/etc/loki/config.yaml -target=read"
     ports:
@@ -51,7 +56,8 @@ services:
 
 
   write:
-    image: grafana/loki:latest
+    container_name: loki_write
+    image: grafana/loki
     platform: linux/arm64
     command: "-config.file=/etc/loki/config.yaml -target=write"
     ports:
@@ -74,6 +80,7 @@ services:
   # Might be moving this to garage (https://github.com/deuxfleurs-org/garage) as minio community support is ending .
   # have already tested garage and believe it would be a good replacement for this.
   minio:
+    container_name: minio_s3
     image: minio/minio
     platform: linux/arm64
     entrypoint:
@@ -102,7 +109,8 @@ services:
 
 
   grafana:
-    image: grafana/grafana:latest
+    container_name: grafana
+    image: grafana/grafana
     platform: linux/arm64
     environment:
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
@@ -124,7 +132,8 @@ services:
 
 
   prometheus:
-    image: prom/prometheus:latest
+    container_name: prometheus
+    image: prom/prometheus
     platform: linux/arm64
     ports:
       - "9090:9090"
@@ -144,7 +153,8 @@ services:
 
 
   gateway:
-    image: nginx:latest
+    container_name: loki_proxy
+    image: nginx
     platform: linux/arm64
     depends_on:
       - read
