@@ -5,6 +5,10 @@ services:
     image: grafana/alloy
     platform: linux/arm64
     privileged: true
+    environment:
+      - PROMETHEUS_ENDPOINT=${PROMETHEUS_ENDPOINT}
+      - LOKI_ENDPOINT=${LOKI_ENDPOINT}
+      - NODE_NAME=${HOSTNAME}
     ports:
       - 12345:12345
       - 4317:4317
