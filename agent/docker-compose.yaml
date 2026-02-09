@@ -6,9 +6,10 @@ services:
     platform: linux/arm64
     privileged: true
     environment:
-      - PROMETHEUS_ENDPOINT=${PROMETHEUS_ENDPOINT}
-      - LOKI_ENDPOINT=${LOKI_ENDPOINT}
+      - PROM_ENDPOINT=http://${PROM_ENDPOINT}:9090/api/v1/write
+      - LOKI_ENDPOINT=http://${LOKI_ENDPOINT}:3100/loki/api/v1/push
       - NODE_NAME=${NODE_NAME}
+      - TENANT_ID=${TENANT_ID}
     ports:
       - 12345:12345
       - 4317:4317
