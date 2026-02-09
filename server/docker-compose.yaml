@@ -21,7 +21,7 @@ services:
       - "7946"
     command: "-config.file=/etc/loki/config.yaml -target=backend -legacy-read-mode=false"
     depends_on:
-      - gateway
+      - loki_proxy
     healthcheck:
       test: [  "CMD", "loki", "-health" ]
       interval: 10s
