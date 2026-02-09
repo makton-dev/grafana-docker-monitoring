@@ -12,8 +12,6 @@ services:
       - TENANT_ID=${TENANT_ID}
     ports:
       - 12345:12345
-      - 4317:4317
-      - 4318:4318
     volumes:
       - ./alloy.conf:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro

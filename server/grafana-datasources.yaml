@@ -7,7 +7,7 @@ datasources:
     jsonData:
       httpHeaderName1: "X-Scope-OrgID"
     secureJsonData:
-      httpHeaderValue1: "tenant1"
+      httpHeaderValue1: ${TENANT_ID}
   - name: Prometheus
     type: prometheus
     access: proxy

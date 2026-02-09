@@ -10,7 +10,7 @@ volumes:
     name: loki
 
 services:
-  backend:
+  loki_backend:
     container_name: loki_backend
     image: grafana/loki
     platform: linux/arm64
@@ -31,15 +31,14 @@ services:
       - grafana
 
 
-  read:
+  loki_read:
     container_name: loki_read
     image: grafana/loki
     platform: linux/arm64
     command: "-config.file=/etc/loki/config.yaml -target=read"
     ports:
       - 3101:3100
-      - 7946
-      - 9095
+      - "7946"
     volumes:
       - ./loki-config.yaml:/etc/loki/config.yaml
     depends_on:
@@ -55,15 +54,14 @@ services:
           - loki
 
 
-  write:
+  loki_write:
     container_name: loki_write
     image: grafana/loki
     platform: linux/arm64
     command: "-config.file=/etc/loki/config.yaml -target=write"
     ports:
       - 3102:3100
-      - 7946
-      - 9095
+      - "7946"
     volumes:
       - ./loki-config.yaml:/etc/loki/config.yaml
     healthcheck:
@@ -76,6 +74,24 @@ services:
     networks:
       <<: *loki-dns
 
+  loki_proxy:
+    container_name: loki_proxy
+    image: nginx
+    platform: linux/arm64
+    depends_on:
+      - read
+      - write
+    volumes:
+      - ./loki-nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grafana
 
   # Might be moving this to garage (https://github.com/deuxfleurs-org/garage) as minio community support is ending .
   # have already tested garage and believe it would be a good replacement for this.
@@ -96,7 +112,7 @@ services:
       - MINIO_PROMETHEUS_AUTH_TYPE=public
       - MINIO_UPDATE=off
     ports:
-      - 9000
+      - "9000"
     volumes:
       - loki-s3:/data
     healthcheck:
@@ -115,6 +131,7 @@ services:
     environment:
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
       - GF_AUTH_ANONYMOUS_ENABLED=false
+      - TENANT_ID=${TENANT_ID}
     depends_on:
       - gateway
     volumes:
@@ -145,26 +162,6 @@ services:
       - "--web.enable-remote-write-receiver"
     healthcheck:
       test: [ "CMD-SHELL", "/bin/wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - grafana
-
-
-  gateway:
-    container_name: loki_proxy
-    image: nginx
-    platform: linux/arm64
-    depends_on:
-      - read
-      - write
-    volumes:
-      - ./loki-nginx.conf:/etc/nginx/nginx.conf
-    ports:
-      - "3100:3100"
-    healthcheck:
-      test: ["CMD", "service", "nginx", "status"]
       interval: 10s
       timeout: 5s
       retries: 5
