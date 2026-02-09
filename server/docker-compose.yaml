@@ -10,7 +10,7 @@ volumes:
     name: loki
 
 services:
-  loki_backend:
+  loki-backend:
     container_name: loki_backend
     image: grafana/loki
     platform: linux/arm64
@@ -21,7 +21,7 @@ services:
       - "7946"
     command: "-config.file=/etc/loki/config.yaml -target=backend -legacy-read-mode=false"
     depends_on:
-      - loki_proxy
+      - loki-proxy
     healthcheck:
       test: [  "CMD", "loki", "-health" ]
       interval: 10s
@@ -31,7 +31,7 @@ services:
       - grafana
 
 
-  loki_read:
+  loki-read:
     container_name: loki_read
     image: grafana/loki
     platform: linux/arm64
@@ -54,7 +54,7 @@ services:
           - loki
 
 
-  loki_write:
+  loki-write:
     container_name: loki_write
     image: grafana/loki
     platform: linux/arm64
@@ -74,13 +74,13 @@ services:
     networks:
       <<: *loki-dns
 
-  loki_proxy:
+  loki-proxy:
     container_name: loki_proxy
     image: nginx
     platform: linux/arm64
     depends_on:
-      - read
-      - write
+      - loki-read
+      - loki-write
     volumes:
       - ./loki-nginx.conf:/etc/nginx/nginx.conf
     ports:
@@ -133,7 +133,8 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - TENANT_ID=${TENANT_ID}
     depends_on:
-      - gateway
+      - loki-proxy
+      - prometheus
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/ds.yaml
       - grafana-storage:/var/lib/grafana
