@@ -5,9 +5,10 @@ services:
     image: grafana/alloy
     platform: linux/arm64
     privileged: true
+    mem_limit: 400m
     environment:
-      - PROM_ENDPOINT=http://${PROM_ENDPOINT}:9090/api/v1/write
-      - LOKI_ENDPOINT=http://${LOKI_ENDPOINT}:3100/loki/api/v1/push
+      - PROM_ENDPOINT=http://${NODE_NAME}:9090/api/v1/write
+      - LOKI_ENDPOINT=http://${NODE_NAME}:3100/loki/api/v1/push
       - NODE_NAME=${NODE_NAME}
       - TENANT_ID=${TENANT_ID}
     ports:
