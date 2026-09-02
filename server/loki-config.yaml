@@ -37,6 +37,7 @@ common:
   ring:
     kvstore:
       store: memberlist
+
 ruler:
   storage:
     s3:

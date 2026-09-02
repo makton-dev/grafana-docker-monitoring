@@ -131,9 +131,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: "500M"
+          memory: "1G"
         reservations:
-          memory: "250M"
+          memory: "500M"
       restart_policy:
         condition: any
     entrypoint:
@@ -163,9 +163,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: "500M"
+          memory: "1G"
         reservations:
-          memory: "250M"
+          memory: "500M"
       restart_policy:
         condition: any
     environment:

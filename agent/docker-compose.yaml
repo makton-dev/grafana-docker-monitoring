@@ -3,7 +3,7 @@ services:
   alloy:
     container_name: alloy
     image: grafana/alloy
-    platform: linux/arm64
+    platform: linux/amd64
     privileged: true
     mem_limit: 400m
     environment:

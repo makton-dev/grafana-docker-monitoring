@@ -3,17 +3,27 @@ networks:
 
 volumes:
   grafana-storage:
-    name: grafana 
+    name: grafana
   prometheus-storage:
     name: prometheus
   loki-s3:
     name: loki
 
 services:
+  # Log Management and cleanup
   loki-backend:
     container_name: loki_backend
     image: grafana/loki
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256m
+        reservations:
+          cpus: '0.5'
+          memory: 128m
     volumes:
       - ./loki-config.yaml:/etc/loki/config.yaml
     ports:
@@ -30,11 +40,20 @@ services:
     networks:
       - grafana
 
-
+  # Log retrieval
   loki-read:
     container_name: loki_read
     image: grafana/loki
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256m
+        reservations:
+          cpus: '0.5'
+          memory: 128m
     command: "-config.file=/etc/loki/config.yaml -target=read"
     ports:
       - 3101:3100
@@ -53,11 +72,20 @@ services:
         aliases:
           - loki
 
-
+  # Log ingestion
   loki-write:
     container_name: loki_write
     image: grafana/loki
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
+        reservations:
+          cpus: '0.5'
+          memory: 256m
     command: "-config.file=/etc/loki/config.yaml -target=write"
     ports:
       - 3102:3100
@@ -74,10 +102,20 @@ services:
     networks:
       <<: *loki-dns
 
+  # Nginx proxy for managing Loki read and write endpoints.
   loki-proxy:
     container_name: loki_proxy
     image: nginx
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 52m
+        reservations:
+          cpus: '0.25'
+          memory: 24m
     depends_on:
       - loki-read
       - loki-write
@@ -98,7 +136,16 @@ services:
   minio:
     container_name: minio_s3
     image: minio/minio
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
+        reservations:
+          cpus: '0.5'
+          memory: 256m
     entrypoint:
       - sh
       - -euc
@@ -123,11 +170,20 @@ services:
     networks:
       - grafana
 
-
+  # Metric and Log Dashboard with Alerting ability
   grafana:
     container_name: grafana
     image: grafana/grafana
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048m
+        reservations:
+          cpus: '1.0'
+          memory: 1024m
     environment:
       - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
       - GF_AUTH_ANONYMOUS_ENABLED=false
@@ -137,9 +193,10 @@ services:
       - prometheus
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/ds.yaml
+      - ./grafana.ini:/etc/grafana/grafana.ini
       - grafana-storage:/var/lib/grafana
-    ports:
-      - "3000:3000"
+#    ports:
+#      - "3000:3000"
     healthcheck:
       test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1" ]
       interval: 10s
@@ -148,11 +205,20 @@ services:
     networks:
       - grafana
 
-
+  # Telemetry Collector
   prometheus:
     container_name: prometheus
     image: prom/prometheus
-    platform: linux/arm64
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
+        reservations:
+          cpus: '0.5'
+          memory: 256m
     ports:
       - "9090:9090"
     volumes:
@@ -168,3 +234,46 @@ services:
       retries: 5
     networks:
       - grafana
+
+  # Nginx proxy for Grafana. May move to node service and use LetsEncrypt
+  grafana-proxy:
+    image: nginx:latest
+    platform: linux/amd64
+    container_name: grafana_proxy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 52m
+        reservations:
+          cpus: '0.25'
+          memory: 24m
+    networks:
+    - grafana
+    volumes:
+      - ./nginx_certs:/opt/certificates
+      - ./grafana-nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - 80:80
+      - 443:443
+
+  # OTEL reciever for Proxmox Clusters
+  alloy_proxmox:
+    container_name: alloy_proxmox
+    image: grafana/alloy
+    platform: linux/amd64
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
+        reservations:
+          cpus: '0.5'
+          memory: 256m
+    ports:
+      - 4318:4318
+    volumes:
+      - ./alloy.proxmox:/etc/alloy/config.alloy:ro
+    command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
