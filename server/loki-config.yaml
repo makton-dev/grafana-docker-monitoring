@@ -28,11 +28,12 @@ common:
   compactor_address: http://loki-backend:3100
   storage:
     s3:
-      endpoint: minio:9000
+      endpoint: garage:3900
+      region: garage
       insecure: true
       bucketnames: loki-data
-      access_key_id: loki
-      secret_access_key: supersecret
+      access_key_id: ${GARAGE_DEFAULT_ACCESS_KEY}
+      secret_access_key: ${GARAGE_DEFAULT_SECRET_KEY}
       s3forcepathstyle: true
   ring:
     kvstore:
@@ -41,7 +42,7 @@ common:
 ruler:
   storage:
     s3:
-      bucketnames: loki-ruler
+      bucketnames: loki-data
 
 compactor:
   working_directory: /tmp/compactor

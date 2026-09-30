@@ -24,7 +24,7 @@ The server stack is composed of several microservices orchestrated via Docker Co
                           └──────────────┘    └────────────────┘
                                       │              │
                           ┌───────────▼──────────────▼─┐
-                          │     MinIO S3 Storage      │
+                          │     Garage S3 Storage     │
                           │    (Log & Data Store)     │
                           └────────────────────────────┘
 ```
@@ -108,7 +108,7 @@ Dedicated service for log ingestion.
 
 **Responsibilities**:
 - Receiving logs from agents
-- Writing to S3 storage (MinIO)
+- Writing to S3 storage (Garage)
 - Replication across cluster
 
 **Configuration**: Multi-target Loki instance  
@@ -160,26 +160,25 @@ Reverse proxy for Grafana providing HTTPS termination and caching.
 - Proxy headers for real IP tracking
 - Cache hit for 200/302 responses (10 minutes)
 
-### MinIO (S3 Storage)
-**Container**: `minio_s3`  
-**Image**: `minio/minio`
+### Garage (S3 Storage)
+**Container**: `garage_s3`
+**Image**: `dxflrs/garage:v2.3.0`
 
 S3-compatible object storage for Loki logs and metadata.
 
-**Credentials**:
-- Access Key: `loki`
-- Secret Key: `supersecret`
-- Endpoint: `minio:9000` (insecure=true)
+**Endpoint**: `garage:3900` (insecure=true, path-style requests)
 
-**Buckets**:
-- `loki-data` - Log data storage
-- `loki-ruler` - Ruler configuration and state
+**Bucket**: `loki-data` - Loki data and ruler state
 
-**Storage**: Named volume `loki-s3`
+**Storage**: Named volume `garage-storage`, mounted at `/var/lib/garage`
 
-**Resource Limits**: 1 CPU, 512MB RAM
+**Configuration**: `garage.toml`; credentials can be supplied through `GARAGE_RPC_SECRET`, `GARAGE_DEFAULT_ACCESS_KEY`, and `GARAGE_DEFAULT_SECRET_KEY`.
 
-**Note**: Currently planned for replacement with Garage (https://github.com/deuxfleurs-org/garage)
+The Compose setup uses Garage's single-node mode, which has no data redundancy. For a production Garage cluster, deploy multiple Garage nodes using Garage's multi-node deployment guidance.
+
+#### Migrating from MinIO
+
+Garage cannot use MinIO's on-disk data format. The Compose files use a separate `garage-storage` volume (`/mnt/gluster/garage` in Swarm), leaving the existing MinIO volume (`loki` or `/mnt/gluster/loki`) untouched. The old `loki-data` and `loki-ruler` buckets are not copied automatically; the new config uses one `loki-data` bucket for both, so plan an S3-level migration of both buckets into a compatible layout before cutover. Keep a backup of the original volume until the migrated data is verified.
 
 ## Configuration Files
 
@@ -247,13 +246,14 @@ common:
   compactor_address: http://loki-backend:3100
   storage:
     s3:
-      endpoint: minio:9000
+      endpoint: garage:3900
+      region: garage
       bucketnames: loki-data
 ```
 
 **Features**:
 - **Multi-target mode**: Separate read, write, and backend processes
-- **S3 Storage**: MinIO backend for data persistence
+- **S3 Storage**: Garage backend for data persistence
 - **Retention**: Enabled with 2-hour delete delay
 - **Compaction**: Every 10 minutes
 - **Cluster Mode**: Memberlist-based gossip protocol
@@ -361,7 +361,7 @@ otelcol.receiver.otlp "proxmox" {
 - `loki-read` - Loki read instance
 - `loki-write` - Loki write instance
 - `loki-backend` - Loki backend instance
-- `minio` - MinIO S3 storage
+- `garage` - Garage S3 storage
 
 ## Volumes
 
@@ -369,7 +369,7 @@ otelcol.receiver.otlp "proxmox" {
 |--------|---------|-----------|
 | `grafana-storage` | Grafana databases, plugins, dashboards | Persistent |
 | `prometheus-storage` | Prometheus time-series data | Persistent |
-| `loki-s3` | MinIO data files | Persistent |
+| `garage-storage` | Garage metadata and objects | Persistent |
 
 ## Environment Variables
 
@@ -390,7 +390,7 @@ Used by:
 
 - Docker and Docker Compose installed
 - SSL/TLS certificates generated in `nginx_certs/` folder
-- Sufficient disk space for log storage (MinIO volume)
+- Sufficient disk space for log storage (Garage volume)
 
 ### Starting the Stack
 
@@ -401,6 +401,9 @@ cd server
 # Set environment variables
 export TENANT_ID=production
 export NODE_NAME=server-01
+export GARAGE_RPC_SECRET="$(openssl rand -hex 32)"
+export GARAGE_DEFAULT_ACCESS_KEY="GK$(openssl rand -hex 16)"
+export GARAGE_DEFAULT_SECRET_KEY="$(openssl rand -hex 32)"
 
 # Start all services
 docker-compose up -d
@@ -416,7 +419,7 @@ docker-compose ps
 | Grafana | `https://grafana.domain.com` | Dashboards & visualization |
 | Prometheus | `http://localhost:9090` | Metrics queries (internal only) |
 | Loki | `http://localhost:3100` | Logs API |
-| MinIO | `http://localhost:9000` | S3 storage management (if exposed) |
+| Garage S3 | Internal `http://garage:3900` | S3-compatible object storage (not published to host) |
 
 ### Stopping the Stack
 
@@ -549,11 +552,11 @@ docker volume ls | grep grafana
 - Check Prometheus logs: `docker-compose logs prometheus`
 - Test from container: `docker-compose exec prometheus curl http://target:port/metrics`
 
-### MinIO connectivity issues
+### Garage connectivity issues
 
-- Verify MinIO is running: `docker-compose ps minio_s3`
-- Check MinIO logs: `docker-compose logs minio_s3`
-- Verify S3 credentials in `loki-config.yaml`
+- Verify Garage is running: `docker-compose ps garage`
+- Check Garage logs: `docker-compose logs garage`
+- Confirm the same Garage access key and secret are set for Garage and Loki
 
 ### High memory usage
 
@@ -589,11 +592,7 @@ proxy_cache_valid 200 302 1h;  # Increase cache duration
 
 ⚠️ **Important Security Notes**:
 
-1. **MinIO Credentials**: Change default credentials in `loki-config.yaml`
-   ```yaml
-   access_key_id: secure-key
-   secret_access_key: secure-password
-   ```
+1. **Garage Credentials**: Set unique `GARAGE_RPC_SECRET`, `GARAGE_DEFAULT_ACCESS_KEY`, and `GARAGE_DEFAULT_SECRET_KEY` values before deployment. Use the same access key and secret for Garage and Loki. The Compose defaults are for local testing only.
 
 2. **SSL Certificates**: Replace self-signed certs with valid ones for production
    - Update `nginx_certs/` with production certificates
@@ -601,7 +600,7 @@ proxy_cache_valid 200 302 1h;  # Increase cache duration
 
 3. **Network Access**: Restrict access to services
    - Prometheus (port 9090): Internal only - don't expose
-   - MinIO (port 9000): Internal only - don't expose
+  - Garage S3 (port 3900): Internal only - don't expose
    - Grafana (port 443): Only expose to authorized users
 
 4. **Authentication**: Enable Grafana authentication
@@ -623,8 +622,10 @@ docker cp prometheus:/prometheus/data prometheus-backup
 docker volume inspect grafana | grep Mountpoint
 # Copy the mountpoint directory
 
-# Backup MinIO S3 data
-docker cp minio_s3:/data minio-backup
+# Back up Garage metadata and objects (stop Garage first for a consistent copy)
+docker compose stop garage
+docker cp garage_s3:/var/lib/garage garage-backup
+docker compose start garage
 ```
 
 ### Restoring Data
@@ -636,8 +637,8 @@ docker cp prometheus-backup prometheus:/prometheus/data
 # Restore Grafana
 # Copy to the volume mountpoint identified earlier
 
-# Restore MinIO
-docker cp minio-backup minio_s3:/data
+# Restore the backup into the garage-storage volume while Garage is stopped.
+# Preserve the meta/ and data/ directories under /var/lib/garage.
 ```
 
 ## Additional Resources
@@ -646,7 +647,7 @@ docker cp minio-backup minio_s3:/data
 - [Prometheus Documentation](https://prometheus.io/docs/)
 - [Loki Documentation](https://grafana.com/docs/loki/)
 - [Alloy Documentation](https://grafana.com/docs/alloy/)
-- [MinIO Documentation](https://min.io/docs/minio/)
+- [Garage Documentation](https://garagehq.deuxfleurs.fr/documentation/)
 - [Nginx Documentation](https://nginx.org/en/docs/)
 
 ## License

@@ -6,8 +6,8 @@ volumes:
     name: grafana
   prometheus-storage:
     name: prometheus
-  loki-s3:
-    name: loki
+  garage-storage:
+    name: garage
 
 services:
   # Log Management and cleanup
@@ -29,7 +29,10 @@ services:
     ports:
       - "3100"
       - "7946"
-    command: "-config.file=/etc/loki/config.yaml -target=backend -legacy-read-mode=false"
+    command: "-config.file=/etc/loki/config.yaml -config.expand-env=true -target=backend -legacy-read-mode=false"
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     depends_on:
       - loki-proxy
     healthcheck:
@@ -54,14 +57,17 @@ services:
         reservations:
           cpus: '0.5'
           memory: 128m
-    command: "-config.file=/etc/loki/config.yaml -target=read"
+    command: "-config.file=/etc/loki/config.yaml -config.expand-env=true -target=read"
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     ports:
       - 3101:3100
       - "7946"
     volumes:
       - ./loki-config.yaml:/etc/loki/config.yaml
     depends_on:
-      - minio
+      - garage
     healthcheck:
       test: [  "CMD", "loki", "-health" ]
       interval: 10s
@@ -86,7 +92,10 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256m
-    command: "-config.file=/etc/loki/config.yaml -target=write"
+    command: "-config.file=/etc/loki/config.yaml -config.expand-env=true -target=write"
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     ports:
       - 3102:3100
       - "7946"
@@ -98,7 +107,7 @@ services:
       timeout: 5s
       retries: 5
     depends_on:
-      - minio
+      - garage
     networks:
       <<: *loki-dns
 
@@ -131,11 +140,9 @@ services:
     networks:
       - grafana
 
-  # Might be moving this to garage (https://github.com/deuxfleurs-org/garage) as minio community support is ending .
-  # have already tested garage and believe it would be a good replacement for this.
-  minio:
-    container_name: minio_s3
-    image: minio/minio
+  garage:
+    container_name: garage_s3
+    image: dxflrs/garage:v2.4.1
     platform: linux/amd64
     restart: unless-stopped
     deploy:
@@ -146,26 +153,21 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256m
-    entrypoint:
-      - sh
-      - -euc
-      - |
-        mkdir -p /data/loki-data && \
-        mkdir -p /data/loki-ruler && \
-        minio server /data
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
-      - MINIO_ROOT_USER=loki
-      - MINIO_ROOT_PASSWORD=supersecret
-      - MINIO_PROMETHEUS_AUTH_TYPE=public
-      - MINIO_UPDATE=off
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_BUCKET: loki-data
     ports:
-      - "9000"
+      - "3900"
     volumes:
-      - loki-s3:/data
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-storage:/var/lib/garage
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      test: [ "CMD", "/garage", "status" ]
       interval: 15s
-      timeout: 20s
+      timeout: 10s
       retries: 5
     networks:
       - grafana
@@ -259,21 +261,21 @@ services:
       - 443:443
 
   # OTEL reciever for Proxmox Clusters
-  alloy_proxmox:
-    container_name: alloy_proxmox
-    image: grafana/alloy
-    platform: linux/amd64
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512m
-        reservations:
-          cpus: '0.5'
-          memory: 256m
-    ports:
-      - 4318:4318
-    volumes:
-      - ./alloy.proxmox:/etc/alloy/config.alloy:ro
-    command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+  # alloy_proxmox:
+  #   container_name: alloy_proxmox
+  #   image: grafana/alloy
+  #   platform: linux/amd64
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '1.0'
+  #         memory: 512m
+  #       reservations:
+  #         cpus: '0.5'
+  #         memory: 256m
+  #   ports:
+  #     - 4318:4318
+  #   volumes:
+  #     - ./alloy.proxmox:/etc/alloy/config.alloy:ro
+  #   command: run --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy

@@ -19,12 +19,12 @@ volumes:
       type: none
       device: /mnt/gluster/prometheus
       o: bind
-  loki-s3:
-    name: loki
+  garage-storage:
+    name: garage
     driver: local
     driver_opts:
       type: none
-      device: /mnt/gluster/loki
+      device: /mnt/gluster/garage
       o: bind
 
 services:
@@ -40,7 +40,10 @@ services:
         condition: any
     volumes:
       - ./server/loki-config.yaml:/etc/loki/config.yaml
-    command: "-config.file=/etc/loki/config.yaml -target=backend -legacy-read-mode=false"
+    command: "-config.file=/etc/loki/config.yaml -config.expand-env=true -target=backend -legacy-read-mode=false"
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     depends_on:
       - loki-proxy
     healthcheck:
@@ -54,7 +57,10 @@ services:
 
   loki-read:
     image: grafana/loki:latest
-    command: "-config.file=/etc/loki/config.yaml -target=read"
+    command: "-config.file=/etc/loki/config.yaml -config.expand-env=true -target=read"
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     deploy:
       resources:
         limits:
@@ -66,7 +72,7 @@ services:
     volumes:
       - ./server/loki-config.yaml:/etc/loki/config.yaml
     depends_on:
-      - minio
+      - garage
     healthcheck:
       test: [  "CMD", "loki", "-health" ]
       interval: 10s
@@ -77,7 +83,10 @@ services:
 
   loki-write:
     image: grafana/loki:latest
-    command: "-config.file=/etc/loki/config.yaml -target=write"
+    command: "-config.file=/etc/loki/config.yaml -config.expand-env=true -target=write"
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      - GARAGE_DEFAULT_SECRET_KEY=${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     deploy:
       resources:
         limits:
@@ -94,7 +103,7 @@ services:
       timeout: 5s
       retries: 5
     depends_on:
-      - minio
+      - garage
     networks:
       - loki
 
@@ -124,10 +133,8 @@ services:
       - loki
       - grafana
 
-  # Might be moving this to garage (https://github.com/deuxfleurs-org/garage) as minio community support is ending .
-  # have already tested garage and believe it would be a good replacement for this.
-  minio:
-    image: minio/minio:latest
+  garage:
+    image: dxflrs/garage:v2.3.0
     deploy:
       resources:
         limits:
@@ -136,24 +143,19 @@ services:
           memory: "500M"
       restart_policy:
         condition: any
-    entrypoint:
-      - sh
-      - -euc
-      - |
-        mkdir -p /data/loki-data && \
-        mkdir -p /data/loki-ruler && \
-        minio server /data
     environment:
-      - MINIO_ROOT_USER=loki
-      - MINIO_ROOT_PASSWORD=supersecret
-      - MINIO_PROMETHEUS_AUTH_TYPE=public
-      - MINIO_UPDATE=off
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_BUCKET: loki-data
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     volumes:
-      - loki-s3:/data
+      - ./server/garage.toml:/etc/garage.toml:ro
+      - garage-storage:/var/lib/garage
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      test: [ "CMD", "/garage", "status" ]
       interval: 15s
-      timeout: 20s
+      timeout: 10s
       retries: 5
     networks:
       - loki

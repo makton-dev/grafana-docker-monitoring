@@ -224,12 +224,12 @@ docker service logs monitoring_loki-backend
 | **Loki Read** | Log querying | 3101 |
 | **Loki Backend** | Log compaction & retention | 3100 |
 | **Loki Proxy** | Route read/write requests | 3100 |
-| **MinIO** | S3-compatible storage | 9000 |
+| **Garage** | S3-compatible storage | 3900 (internal) |
 | **Nginx** | Reverse proxy for Grafana | 80/443 |
 
 **How it works**:
 1. Prometheus scrapes or receives metrics from agents
-2. Loki receives logs from agents and stores in MinIO S3
+2. Loki receives logs from agents and stores them in Garage S3
 3. Grafana connects to both Prometheus and Loki
 4. Nginx provides HTTPS access to Grafana
 5. Data is persisted in volumes (can be backed by GlusterFS)
@@ -306,7 +306,7 @@ container_memory_usage_bytes
 |--------|---------|------|---------|
 | `grafana-storage` | Grafana | `/var/lib/grafana` | Dashboards, plugins, users |
 | `prometheus-storage` | Prometheus | `/prometheus` | Time-series metrics data |
-| `loki-s3` | MinIO | `/data` | Logs and metadata (S3) |
+| `garage-storage` | Garage | `/var/lib/garage` | Garage metadata and log objects |
 
 ### Persistence Options
 
@@ -366,7 +366,7 @@ The stack self-monitors! View internal health:
 - **Grafana health**: `https://grafana.domain.com/api/health`
 - **Prometheus health**: `http://prometheus:9090/-/healthy`
 - **Loki health**: `docker-compose exec loki-backend loki -health`
-- **MinIO health**: `docker-compose exec minio_s3 mc admin info local`
+- **Garage health**: `docker-compose exec garage /garage status`
 
 ## Troubleshooting
 
@@ -453,7 +453,6 @@ Edit `agent/alloy.conf` - comment out rules in the `loki.relabel` section:
 
 ### Planned Features
 
-- [ ] **Garage replacement**: Replace MinIO with Garage for better distributed storage
 - [ ] **Alerting**: Configure alert rules and notifications
 - [ ] **Service discovery**: Automatic agent registration
 - [ ] **Multi-region**: Support for distributed deployments across regions
@@ -464,7 +463,7 @@ Edit `agent/alloy.conf` - comment out rules in the `loki.relabel` section:
 
 ### Known Limitations
 
-- MinIO community edition has limited support (planned Garage replacement)
+- The included Garage Compose service is a single node and does not provide data redundancy
 - Single Grafana instance (can be HA with external database)
 - Manual certificate management (could use cert-manager)
 - No built-in alerting (can integrate with AlertManager)
@@ -474,11 +473,11 @@ Edit `agent/alloy.conf` - comment out rules in the `loki.relabel` section:
 ### Security
 
 - ✅ Use HTTPS for all external access (certificates in `nginx_certs/`)
-- ✅ Change default MinIO credentials in `server/loki-config.yaml`
+- ✅ Set unique Garage credentials with `GARAGE_RPC_SECRET`, `GARAGE_DEFAULT_ACCESS_KEY`, and `GARAGE_DEFAULT_SECRET_KEY`
 - ✅ Enable Grafana authentication in `server/grafana.ini`
 - ✅ Restrict network access to services
 - ✅ Rotate credentials and API keys regularly
-- ❌ Don't expose Prometheus or MinIO ports to public internet
+- ❌ Don't expose Prometheus or Garage ports to public internet
 
 ### Operations
 
@@ -572,7 +571,7 @@ https://grafana.domain.com
 ### Important Files
 
 - **Configuration**: `env.sh`, `server/prometheus.yml`, `agent/alloy.conf`
-- **Credentials**: `server/loki-config.yaml` (MinIO keys)
+- **Credentials**: Garage credentials are supplied through environment variables; see `server/README.md`
 - **Certificates**: `server/nginx_certs/server.{crt,key}`
 - **Compose files**: `docker-compose.yaml` (standalone), `swarm-compose.yaml` (swarm)
 
