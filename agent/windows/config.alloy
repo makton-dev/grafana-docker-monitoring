@@ -1,0 +1,147 @@
+// ####################################
+// Windows Server Metrics Configuration
+// ####################################
+
+prometheus.exporter.windows "default" {
+  enabled_collectors = ["cpu","logical_disk","net","os","service","system", "memory"]
+}
+
+discovery.relabel "windows" {
+  targets = prometheus.exporter.windows.default.targets
+  rule {
+    target_label = "job"
+    replacement  = "integrations/windows"
+  }
+  rule {
+    target_label = "environment"
+    replacement  = "dev"
+  }
+  rule {
+    target_label = "server_type"
+    replacement  = "single"
+  }
+  rule {
+    target_label = "location"
+    replacement  = "here"
+  }
+}
+
+// Configure a prometheus.scrape component to collect windows metrics.
+prometheus.scrape "windows" {
+  targets    = discovery.relabel.windows.output
+  forward_to = [prometheus.remote_write.remote.receiver]
+}
+
+prometheus.remote_write "remote" {
+  endpoint {
+    url = "http://[endpoint]:9090/api/v1/write"
+  }
+}
+
+// ####################################
+// Windows Server Logs Configuration
+// ####################################
+
+loki.source.windowsevent "application"  {
+    eventlog_name = "Application"
+    use_incoming_timestamp = true
+    forward_to = [loki.process.endpoint.receiver]
+}
+
+loki.source.windowsevent "System"  {
+    eventlog_name = "System"
+    use_incoming_timestamp = true
+    forward_to = [loki.process.endpoint.receiver]
+}
+
+// setup json fields
+loki.process "endpoint" {
+  forward_to = [loki.write.endpoint.receiver]
+  stage.json {
+      expressions = {
+          level     = "",       // Extracts numeric level (e.g., "4")
+          levelText = "",       // Extracts text level (e.g., "Information")
+          message = "",
+          Overwritten = "",
+          source = "",
+          computer = "",
+          eventRecordID = "",
+          channel = "",
+          component_id = "",
+          execution = "",
+      }
+  }
+
+  // Extract nested fields from the "execution" object (e.g. processId, processName).
+  stage.json {
+      source = "execution"
+      expressions = {
+          processId = "",
+          processName = "",
+      }
+  }
+
+  // Normalize the 'level' field to standard Loki values (info, warn, error, etc.)
+  // This handles both numeric codes and text variations
+  stage.template {
+    source = "level"
+    template = `{{- $lvl := .Value -}}
+                {{- if eq $lvl "0" -}}debug
+                {{- else if eq $lvl "1" -}}critical
+                {{- else if eq $lvl "2" -}}error
+                {{- else if eq $lvl "3" -}}warn
+                {{- else if eq $lvl "4" -}}info
+                {{- else if eq $lvl "5" -}}trace
+                {{- else if eq .levelText "Information" -}}info
+                {{- else if eq .levelText "Warning" -}}warn
+                {{- else if eq .levelText "Error" -}}error
+                {{- else -}}{{- .levelText -}}{{- end -}}`
+  }
+
+  stage.structured_metadata {
+      values = {
+          "eventRecordID" = "",
+          "channel" = "",
+          "component_id" = "",
+          "execution_processId" = "processId",
+          "execution_processName" = "processName",
+      }
+  }
+
+  stage.eventlogmessage {
+      source = "message"
+      overwrite_existing = true
+  }
+
+  stage.labels {
+      values = {
+          "level" = "",
+          "service_name" = "source",
+      }
+  }
+
+  stage.static_labels {
+    values = {
+        environment = "dev",
+        server_type = "server",
+        location = "here",
+    }
+  }
+
+  stage.output {
+      source = "message"
+  }
+
+}
+
+
+loki.write "endpoint" {
+    endpoint {
+        url ="http://[endpoint]:3100/loki/api/v1/push"
+        tenant_id = "[tenant_id]"
+    }
+}
+
+livedebugging{
+  enabled = false
+}
